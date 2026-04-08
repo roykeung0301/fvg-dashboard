@@ -1,0 +1,168 @@
+##############################################
+# 加密貨幣交易策略分析團隊 — 角色定義
+##############################################
+
+team:
+  name: "Crypto Trading Strategy Team"
+  description: "幣安加密貨幣交易策略分析與執行團隊"
+
+roles:
+
+  # ── 1. 量化研究員 ──────────────────────────
+  - id: quant_researcher
+    name: "量化研究員"
+    name_en: "Quantitative Researcher"
+    responsibilities:
+      - 發現 alpha 因子與市場無效性
+      - 設計並迭代交易策略
+      - 研究因子組合與權重優化
+      - 統計建模與機器學習策略探索
+    inputs:
+      - 歷史價格與成交量數據
+      - 鏈上數據 (on-chain data)
+      - 宏觀經濟指標
+      - 另類數據 (社群情緒、資金費率等)
+    outputs:
+      - 策略假說文檔
+      - alpha 因子定義
+      - 策略參數建議
+    tools:
+      - Python (pandas, numpy, scipy, statsmodels)
+      - Jupyter Notebook
+      - 因子分析框架
+
+  # ── 2. 回測工程師 ──────────────────────────
+  - id: backtest_engineer
+    name: "回測工程師"
+    name_en: "Backtest Engineer"
+    responsibilities:
+      - 歷史數據回測策略表現
+      - 績效指標分析 (Sharpe, Sortino, MDD, Win Rate 等)
+      - 參數敏感性分析與過擬合檢測
+      - 蒙地卡羅模擬與壓力測試
+    inputs:
+      - 量化研究員產出的策略定義
+      - 歷史 OHLCV 數據
+      - 交易成本與滑點模型
+    outputs:
+      - 回測報告 (績效曲線、指標摘要)
+      - 參數熱力圖
+      - 策略改進建議
+    tools:
+      - Backtrader / vectorbt / custom engine
+      - Python (matplotlib, plotly)
+      - 績效分析模組
+
+  # ── 3. 風險管理師 ──────────────────────────
+  - id: risk_manager
+    name: "風險管理師"
+    name_en: "Risk Manager"
+    responsibilities:
+      - 投資組合風險評估 (VaR, CVaR, 最大回撤)
+      - 倉位限額與槓桿管理
+      - 相關性與集中度風險監控
+      - 制定停損停利規則
+      - 極端行情應急預案
+    inputs:
+      - 當前持倉與未實現損益
+      - 市場波動率數據
+      - 回測工程師的風險指標
+    outputs:
+      - 風險限額參數
+      - 倉位調整建議
+      - 風險預警信號
+    tools:
+      - 風險計算引擎
+      - 相關性矩陣分析
+      - 壓力測試框架
+
+  # ── 4. 信號工程師 ──────────────────────────
+  - id: signal_engineer
+    name: "信號工程師"
+    name_en: "Signal Engineer"
+    responsibilities:
+      - 技術指標計算 (MA, RSI, MACD, Bollinger Bands 等)
+      - 信號管線 (pipeline) 建構與維護
+      - 多時間框架信號聚合
+      - 信號品質監控與漂移檢測
+    inputs:
+      - 即時與歷史 K 線數據
+      - 量化研究員定義的因子邏輯
+      - 風險管理師的限額參數
+    outputs:
+      - 標準化交易信號 (buy / sell / hold)
+      - 信號強度與信心分數
+      - 建議倉位大小
+    tools:
+      - TA-Lib / pandas-ta
+      - 即時數據流處理
+      - 信號品質儀表板
+
+  # ── 5. 執行工程師 ──────────────────────────
+  - id: execution_engineer
+    name: "執行工程師"
+    name_en: "Execution Engineer"
+    responsibilities:
+      - 幣安 API 整合 (Spot / Futures / Margin)
+      - 智慧訂單路由與拆單執行
+      - 訂單狀態追蹤與異常處理
+      - 執行品質分析 (滑點、成交率)
+    inputs:
+      - 信號工程師產出的交易信號
+      - 風險管理師的倉位限額
+      - 即時市場深度 (order book)
+    outputs:
+      - 訂單執行回報
+      - 成交明細記錄
+      - 執行品質報告
+    tools:
+      - python-binance / ccxt
+      - Binance WebSocket API
+      - 訂單管理系統
+
+  # ── 6. 市場分析師 ──────────────────────────
+  - id: market_analyst
+    name: "市場分析師"
+    name_en: "Market Analyst"
+    responsibilities:
+      - 即時行情監控與摘要
+      - 市場新聞與事件分析
+      - 異常交易量 / 價格檢測
+      - 市場情緒指標追蹤 (Fear & Greed, 資金費率)
+    inputs:
+      - 即時行情數據流
+      - 新聞 API / 社群媒體數據
+      - 鏈上異常警報
+    outputs:
+      - 市場狀態摘要
+      - 異常檢測警報
+      - 事件影響評估
+    tools:
+      - 新聞聚合 API
+      - 異常檢測模型
+      - 情緒分析模型
+
+##############################################
+# 協作流程
+##############################################
+workflow:
+  description: "團隊協作的標準流程"
+  steps:
+    - step: 1
+      actor: market_analyst
+      action: "監控市場狀態，發出市場環境評估"
+    - step: 2
+      actor: quant_researcher
+      action: "根據市場環境設計/調整策略假說"
+    - step: 3
+      actor: backtest_engineer
+      action: "回測策略，產出績效報告"
+    - step: 4
+      actor: risk_manager
+      action: "評估風險，設定限額參數"
+    - step: 5
+      actor: signal_engineer
+      action: "將策略轉化為即時交易信號"
+    - step: 6
+      actor: execution_engineer
+      action: "根據信號與限額執行交易"

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>FVG Trading Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  background: #0b0e11; color: #eaecef;
+  min-height: 100vh; padding-bottom: 40px;
+  -webkit-font-smoothing: antialiased;
+}
+.header {
+  text-align:center; padding:16px 16px 8px;
+  border-bottom: 1px solid #1e2329;
+}
+.header h1 { font-size:17px; font-weight:600; }
+.header .subtitle { font-size:12px; color:#848e9c; margin-top:4px; }
+
+/* Period selector */
+.period-bar {
+  display:flex; gap:8px; padding:12px 16px; overflow-x:auto;
+  -webkit-overflow-scrolling: touch;
+}
+.period-btn {
+  padding:6px 14px; border-radius:6px; font-size:13px;
+  background:#1e2329; color:#848e9c; border:none;
+  white-space:nowrap; cursor:pointer; flex-shrink:0;
+}
+.period-btn.active { background:#fcd535; color:#0b0e11; font-weight:600; }
+
+/* Summary card */
+.summary-card {
+  margin:12px 16px; padding:20px; border-radius:12px;
+  background: linear-gradient(135deg, #1e2329 0%, #161a1e 100%);
+}
+.summary-period { font-size:12px; color:#848e9c; }
+.summary-pnl { font-size:32px; font-weight:700; margin:6px 0; }
+.summary-pnl.positive { color:#0ecb81; }
+.summary-pnl.negative { color:#f6465d; }
+.summary-pct { font-size:14px; }
+.summary-pct.positive { color:#0ecb81; }
+.summary-pct.negative { color:#f6465d; }
+
+/* Chart */
+.chart-container {
+  margin:16px; padding:12px; border-radius:12px;
+  background:#161a1e; position:relative; height:220px;
+}
+.chart-labels {
+  display:flex; justify-content:space-between; padding:4px 16px 0;
+  font-size:11px; color:#848e9c;
+}
+
+/* Stats grid */
+.stats-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:1px;
+  margin:16px; background:#1e2329; border-radius:12px; overflow:hidden;
+}
+.stat-item {
+  padding:14px 16px; background:#161a1e;
+}
+.stat-label { font-size:11px; color:#848e9c; }
+.stat-value { font-size:16px; font-weight:600; margin-top:4px; }
+
+/* Asset breakdown */
+.section-title {
+  font-size:15px; font-weight:600; padding:20px 16px 10px;
+}
+.asset-list { padding:0 16px; }
+.asset-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:14px 16px; margin-bottom:8px;
+  background:#161a1e; border-radius:10px;
+}
+.asset-info { display:flex; align-items:center; gap:10px; }
+.asset-icon {
+  width:32px; height:32px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; color:#fff;
+}
+.asset-icon.btc { background:#f7931a; }
+.asset-icon.eth { background:#627eea; }
+.asset-icon.sol { background:#9945ff; }
+.asset-icon.xrp { background:#23292f; border:1px solid #848e9c; }
+.asset-name { font-size:14px; font-weight:500; }
+.asset-trades { font-size:11px; color:#848e9c; }
+.asset-pnl { text-align:right; }
+.asset-pnl-value { font-size:14px; font-weight:600; }
+.asset-pnl-pct { font-size:11px; }
+
+/* Calendar */
+.calendar-section {
+  margin:16px; background:#161a1e; border-radius:12px; padding:16px;
+}
+.calendar-header {
+  display:flex; justify-content:space-between; align-items:center;
+  margin-bottom:12px;
+}
+.calendar-month { font-size:15px; font-weight:600; }
+.calendar-nav { display:flex; gap:12px; }
+.calendar-nav button {
+  background:#1e2329; border:none; color:#eaecef;
+  width:28px; height:28px; border-radius:6px; font-size:14px; cursor:pointer;
+}
+.calendar-grid {
+  display:grid; grid-template-columns:repeat(7, 1fr); gap:4px;
+}
+.cal-header { text-align:center; font-size:11px; color:#848e9c; padding:4px; }
+.cal-day {
+  text-align:center; padding:6px 2px; border-radius:6px;
+  font-size:12px; min-height:44px;
+}
+.cal-day .day-num { font-weight:500; }
+.cal-day .day-pnl { font-size:10px; margin-top:2px; }
+.cal-day.positive { background:rgba(14,203,129,0.15); }
+.cal-day.negative { background:rgba(246,70,93,0.15); }
+.cal-day.positive .day-pnl { color:#0ecb81; }
+.cal-day.negative .day-pnl { color:#f6465d; }
+.cal-day.empty { opacity:0.3; }
+.cal-day.zero .day-pnl { color:#848e9c; }
+
+/* Trade list */
+.trade-list { padding:0 16px; }
+.trade-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 0; border-bottom:1px solid #1e2329;
+}
+.trade-side {
+  display:inline-block; padding:2px 6px; border-radius:4px;
+  font-size:10px; font-weight:600;
+}
+.trade-side.long { background:rgba(14,203,129,0.15); color:#0ecb81; }
+.trade-side.short { background:rgba(246,70,93,0.15); color:#f6465d; }
+.trade-symbol { font-size:13px; font-weight:500; margin-left:6px; }
+.trade-time { font-size:11px; color:#848e9c; }
+.trade-result { text-align:right; }
+.trade-pnl { font-size:13px; font-weight:600; }
+.trade-pct { font-size:11px; }
+
+/* Tabs */
+.tab-bar {
+  display:flex; gap:0; margin:16px 16px 0; border-radius:8px; overflow:hidden;
+  background:#1e2329;
+}
+.tab-btn {
+  flex:1; padding:10px; text-align:center; font-size:13px;
+  background:transparent; border:none; color:#848e9c; cursor:pointer;
+}
+.tab-btn.active { background:#2b3139; color:#eaecef; font-weight:600; }
+
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+/* Loading */
+.loading {
+  text-align:center; padding:60px 20px; color:#848e9c;
+}
+.loading .spinner {
+  width:32px; height:32px; border:3px solid #1e2329;
+  border-top-color:#fcd535; border-radius:50%;
+  animation: spin 0.8s linear infinite; margin:0 auto 16px;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Message bar */
+.message-bar {
+  margin:12px 16px; padding:12px 16px; border-radius:10px;
+  background:rgba(252,213,53,0.08); border:1px solid rgba(252,213,53,0.2);
+  font-size:13px; color:#fcd535; text-align:center;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>FVG Trend Follow Combo3</h1>
+  <div class="subtitle">BTC + ETH + SOL + XRP | $5,000 Initial</div>
+  <div class="subtitle" id="modeLabel"></div>
+</div>
+
+<div class="period-bar" id="periodBar"></div>
+
+<div class="summary-card" id="summaryCard">
+  <div class="loading"><div class="spinner"></div>Loading data...</div>
+</div>
+
+<div class="chart-container">
+  <canvas id="equityChart"></canvas>
+</div>
+
+<div id="liveSection" style="display:none;">
+  <div class="summary-card" style="margin-top:0; border: 1px solid rgba(14,203,129,0.3);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <span id="liveMode" style="font-size:12px; padding:3px 8px; border-radius:4px; background:rgba(14,203,129,0.15); color:#0ecb81; font-weight:600;"></span>
+      <span id="liveUpdated" style="font-size:11px; color:#848e9c;"></span>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+      <div>
+        <div style="font-size:11px; color:#848e9c;">Live Equity</div>
+        <div id="liveEquity" style="font-size:24px; font-weight:700;"></div>
+        <div id="liveReturn" style="font-size:13px;"></div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px; color:#848e9c;">Trades / Positions</div>
+        <div id="liveCounts" style="font-size:15px; font-weight:600;"></div>
+      </div>
+    </div>
+    <div id="livePositions" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<div class="message-bar" id="messageBar"></div>
+
+<div class="stats-grid" id="statsGrid"></div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('assets')">Per Asset</button>
+  <button class="tab-btn" onclick="switchTab('calendar')">Calendar</button>
+  <button class="tab-btn" onclick="switchTab('trades')">Trades</button>
+</div>
+
+<div id="tab-assets" class="tab-content active">
+  <div class="section-title">Asset Performance</div>
+  <div class="asset-list" id="assetList"></div>
+</div>
+
+<div id="tab-calendar" class="tab-content">
+  <div class="calendar-section" id="calendarSection"></div>
+</div>
+
+<div id="tab-trades" class="tab-content">
+  <div class="section-title">Recent Trades</div>
+  <div class="trade-list" id="tradeList"></div>
+</div>
+
+<script>
+let DATA = null;
+let currentPeriod = 'all';
+let calendarMonth = null;
+let chart = null;
+
+async function loadData() {
+  let resp;
+  try {
+    resp = await fetch('/api/data');
+    if (!resp.ok) throw new Error('API not available');
+  } catch(e) {
+    // Fallback to static JSON file
+    resp = await fetch('/dashboard_data.json');
+  }
+  DATA = await resp.json();
+  calendarMonth = new Date(DATA.end_date);
+  calendarMonth.setDate(1);
+  initPeriods();
+  render();
+  renderLive();
+  var m = DATA.mode === 'live' ? 'LIVE' : 'BACKTEST';
+  var u = DATA.last_updated ? ' | Updated: ' + DATA.last_updated.slice(0,16).replace('T',' ') : '';
+  document.getElementById('modeLabel').textContent = m + u;
+}
+
+function initPeriods() {
+  const bar = document.getElementById('periodBar');
+  const periods = [
+    {key:'7d', label:'7 Days'},
+    {key:'30d', label:'30 Days'},
+    {key:'90d', label:'90 Days'},
+    {key:'all', label: `${DATA.start_date.slice(0,10)} to ${DATA.end_date.slice(0,10)}`},
+  ];
+  bar.innerHTML = periods.map(p =>
+    `<button class="period-btn ${p.key===currentPeriod?'active':''}" onclick="setPeriod('${p.key}')">${p.label}</button>`
+  ).join('');
+}
+
+function setPeriod(p) {
+  currentPeriod = p;
+  initPeriods();
+  render();
+}
+
+function getFilteredData() {
+  const end = new Date(DATA.end_date);
+  let start;
+  if (currentPeriod === '7d') start = new Date(end - 7*86400000);
+  else if (currentPeriod === '30d') start = new Date(end - 30*86400000);
+  else if (currentPeriod === '90d') start = new Date(end - 90*86400000);
+  else start = new Date(DATA.start_date);
+
+  const trades = DATA.trades.filter(t => {
+    const d = new Date(t.exit_time);
+    return d >= start && d <= end;
+  });
+
+  const equity = DATA.equity_curve.filter(e => {
+    const d = new Date(e.time);
+    return d >= start && d <= end;
+  });
+
+  const startEq = equity.length > 0 ? equity[0].value : DATA.initial_capital;
+  const endEq = equity.length > 0 ? equity[equity.length-1].value : DATA.initial_capital;
+
+  return { trades, equity, start, end, startEq, endEq };
+}
+
+function render() {
+  const f = getFilteredData();
+  renderSummary(f);
+  renderChart(f);
+  renderStats(f);
+  renderAssets(f);
+  renderCalendar(f);
+  renderTrades(f);
+  renderMessage(f);
+}
+
+function renderSummary(f) {
+  const pnl = f.endEq - f.startEq;
+  const pct = (pnl / f.startEq * 100);
+  const cls = pnl >= 0 ? 'positive' : 'negative';
+  const sign = pnl >= 0 ? '+' : '';
+
+  document.getElementById('summaryCard').innerHTML = `
+    <div class="summary-period">${f.start.toISOString().slice(0,10)} to ${f.end.toISOString().slice(0,10)}</div>
+    <div class="summary-pnl ${cls}">${sign}$${Math.abs(pnl).toFixed(2)}</div>
+    <div class="summary-pct ${cls}">${sign}${pct.toFixed(2)}%</div>
+  `;
+}
+
+function renderChart(f) {
+  const ctx = document.getElementById('equityChart').getContext('2d');
+  if (chart) chart.destroy();
+
+  const labels = f.equity.map(e => e.time);
+  const values = f.equity.map(e => e.value);
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+  const isUp = values.length > 1 && values[values.length-1] >= values[0];
+  if (isUp) {
+    gradient.addColorStop(0, 'rgba(14,203,129,0.3)');
+    gradient.addColorStop(1, 'rgba(14,203,129,0)');
+  } else {
+    gradient.addColorStop(0, 'rgba(246,70,93,0.3)');
+    gradient.addColorStop(1, 'rgba(246,70,93,0)');
+  }
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: isUp ? '#0ecb81' : '#f6465d',
+        backgroundColor: gradient,
+        borderWidth: 2,
+        fill: true,
+        pointRadius: 0,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: f.equity.length > 500 ? 'month' : 'week' },
+          grid: { display: false },
+          ticks: { color: '#848e9c', font: { size: 10 }, maxTicksLimit: 6 },
+        },
+        y: {
+          grid: { color: 'rgba(132,142,156,0.1)' },
+          ticks: {
+            color: '#848e9c', font: { size: 10 },
+            callback: v => '$' + v.toLocaleString(),
+          },
+        }
+      },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+}
+
+function renderStats(f) {
+  const pnls = f.trades.map(t => t.net_pnl);
+  const wins = pnls.filter(p => p > 0);
+  const losses = pnls.filter(p => p <= 0);
+  const wr = pnls.length > 0 ? (wins.length / pnls.length * 100) : 0;
+  const pf = losses.length > 0 ? (wins.reduce((a,b)=>a+b,0) / Math.abs(losses.reduce((a,b)=>a+b,0))) : 0;
+  const eq = f.equity.map(e => e.value);
+  let maxDD = 0;
+  let peak = eq[0] || 0;
+  for (const v of eq) { peak = Math.max(peak, v); maxDD = Math.max(maxDD, (peak-v)/peak*100); }
+
+  document.getElementById('statsGrid').innerHTML = `
+    <div class="stat-item"><div class="stat-label">Total Trades</div><div class="stat-value">${f.trades.length}</div></div>
+    <div class="stat-item"><div class="stat-label">Win Rate</div><div class="stat-value">${wr.toFixed(1)}%</div></div>
+    <div class="stat-item"><div class="stat-label">Profit Factor</div><div class="stat-value">${pf.toFixed(2)}</div></div>
+    <div class="stat-item"><div class="stat-label">Max Drawdown</div><div class="stat-value">${maxDD.toFixed(1)}%</div></div>
+  `;
+}
+
+function renderAssets(f) {
+  const byAsset = {};
+  for (const t of f.trades) {
+    if (!byAsset[t.symbol]) byAsset[t.symbol] = { pnl: 0, trades: 0, wins: 0 };
+    byAsset[t.symbol].pnl += t.net_pnl;
+    byAsset[t.symbol].trades++;
+    if (t.net_pnl > 0) byAsset[t.symbol].wins++;
+  }
+
+  const icons = { BTCUSDT:'btc', ETHUSDT:'eth', SOLUSDT:'sol', XRPUSDT:'xrp' };
+  const names = { BTCUSDT:'BTC', ETHUSDT:'ETH', SOLUSDT:'SOL', XRPUSDT:'XRP' };
+  const totalPnl = Object.values(byAsset).reduce((a,b) => a + b.pnl, 0);
+
+  document.getElementById('assetList').innerHTML = Object.entries(byAsset)
+    .sort((a,b) => b[1].pnl - a[1].pnl)
+    .map(([sym, d]) => {
+      const cls = d.pnl >= 0 ? 'positive' : 'negative';
+      const sign = d.pnl >= 0 ? '+' : '';
+      const wr = d.trades > 0 ? (d.wins/d.trades*100).toFixed(0) : 0;
+      const pct = totalPnl !== 0 ? (d.pnl / Math.abs(totalPnl) * 100).toFixed(0) : 0;
+      return `<div class="asset-row">
+        <div class="asset-info">
+          <div class="asset-icon ${icons[sym]}">${names[sym]}</div>
+          <div>
+            <div class="asset-name">${sym}</div>
+            <div class="asset-trades">${d.trades} trades | WR ${wr}%</div>
+          </div>
+        </div>
+        <div class="asset-pnl">
+          <div class="asset-pnl-value ${cls}">${sign}$${Math.abs(d.pnl).toFixed(2)}</div>
+          <div class="asset-pnl-pct ${cls}">${sign}${(d.pnl/DATA.initial_capital*100).toFixed(1)}%</div>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+function renderCalendar(f) {
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth();
+  const monthStr = `${year}-${String(month+1).padStart(2,'0')}`;
+
+  // Daily PnL
+  const dailyPnl = {};
+  for (const t of DATA.trades) {
+    const day = t.exit_time.slice(0, 10);
+    dailyPnl[day] = (dailyPnl[day] || 0) + t.net_pnl;
+  }
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  let html = `
+    <div class="calendar-header">
+      <button class="calendar-nav" style="background:none;border:none;">
+        <button onclick="navMonth(-1)" style="background:#1e2329;border:none;color:#eaecef;width:28px;height:28px;border-radius:6px;font-size:14px;cursor:pointer;">&lt;</button>
+      </button>
+      <div class="calendar-month">${monthStr}</div>
+      <button onclick="navMonth(1)" style="background:#1e2329;border:none;color:#eaecef;width:28px;height:28px;border-radius:6px;font-size:14px;cursor:pointer;">&gt;</button>
+    </div>
+    <div class="calendar-grid">
+      <div class="cal-header">S</div><div class="cal-header">M</div><div class="cal-header">T</div>
+      <div class="cal-header">W</div><div class="cal-header">T</div><div class="cal-header">F</div><div class="cal-header">S</div>
+  `;
+
+  // Empty cells before first day
+  for (let i = 0; i < firstDay; i++) html += '<div class="cal-day empty"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const pnl = dailyPnl[dateStr];
+    let cls = '';
+    let pnlStr = '';
+    if (pnl !== undefined) {
+      cls = pnl > 0.01 ? 'positive' : pnl < -0.01 ? 'negative' : 'zero';
+      pnlStr = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
+    }
+    html += `<div class="cal-day ${cls}">
+      <div class="day-num">${d}</div>
+      <div class="day-pnl">${pnlStr}</div>
+    </div>`;
+  }
+
+  html += '</div>';
+
+  // Monthly total
+  const monthTrades = DATA.trades.filter(t => t.exit_time.startsWith(monthStr));
+  const monthPnl = monthTrades.reduce((a,t) => a + t.net_pnl, 0);
+  const mCls = monthPnl >= 0 ? 'positive' : 'negative';
+  html += `<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid #1e2329;">
+    <span style="color:#848e9c;font-size:12px;">${monthStr} Total: ${monthTrades.length} trades</span><br>
+    <span class="asset-pnl-value ${mCls}" style="font-size:18px;">${monthPnl>=0?'+':''}$${Math.abs(monthPnl).toFixed(2)}</span>
+  </div>`;
+
+  document.getElementById('calendarSection').innerHTML = html;
+}
+
+function navMonth(delta) {
+  calendarMonth.setMonth(calendarMonth.getMonth() + delta);
+  renderCalendar(getFilteredData());
+}
+
+function renderTrades(f) {
+  const trades = f.trades.slice().sort((a,b) => new Date(b.exit_time) - new Date(a.exit_time));
+  const icons = { BTCUSDT:'btc', ETHUSDT:'eth', SOLUSDT:'sol', XRPUSDT:'xrp' };
+  const names = { BTCUSDT:'BTC', ETHUSDT:'ETH', SOLUSDT:'SOL', XRPUSDT:'XRP' };
+
+  document.getElementById('tradeList').innerHTML = trades.slice(0, 100).map(t => {
+    const cls = t.net_pnl >= 0 ? 'positive' : 'negative';
+    const sign = t.net_pnl >= 0 ? '+' : '';
+    return `<div class="trade-row">
+      <div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="trade-side ${t.side}">${t.side.toUpperCase()}</span>
+          <span class="trade-symbol">${names[t.symbol] || t.symbol}</span>
+        </div>
+        <div class="trade-time">${t.entry_time.slice(0,16)} → ${t.exit_time.slice(0,16)}</div>
+        <div class="trade-time">$${Number(t.entry_price).toLocaleString(undefined,{minimumFractionDigits:2})} → $${Number(t.exit_price).toLocaleString(undefined,{minimumFractionDigits:2})} | ${t.exit_reason}</div>
+      </div>
+      <div class="trade-result">
+        <div class="trade-pnl ${cls}">${sign}$${Math.abs(t.net_pnl).toFixed(2)}</div>
+        <div class="trade-pct ${cls}">${sign}${t.pnl_pct.toFixed(1)}%</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderMessage(f) {
+  const pnl = f.endEq - f.startEq;
+  const msgs = pnl > 0
+    ? ['Your assets are growing. Wealth comes from accumulation.',
+       'Strategy performing well. Stay disciplined.',
+       'Consistent gains compound over time.']
+    : ['Markets fluctuate. Trust your system.',
+       'Drawdowns are temporary. Strategy is validated.',
+       'Risk management is protecting your capital.'];
+  const msg = msgs[Math.floor(Math.random() * msgs.length)];
+  document.getElementById('messageBar').textContent = msg;
+}
+
+function renderLive() {
+  const live = DATA.live;
+  if (!live) return;
+  const sec = document.getElementById('liveSection');
+  sec.style.display = 'block';
+
+  const mode = (live.mode || 'paper').toUpperCase();
+  document.getElementById('liveMode').textContent = mode === 'LIVE' ? '🔴 LIVE' : '📋 PAPER';
+  const upd = live.last_updated ? live.last_updated.slice(0,16).replace('T',' ') : '-';
+  document.getElementById('liveUpdated').textContent = 'Updated: ' + upd;
+
+  const eq = live.equity || live.initial_capital;
+  const cap = live.initial_capital || 5000;
+  const ret = (eq - cap) / cap * 100;
+  const cls = ret >= 0 ? 'positive' : 'negative';
+  const sign = ret >= 0 ? '+' : '';
+  document.getElementById('liveEquity').innerHTML = `<span class="${cls}">$${eq.toLocaleString('en',{minimumFractionDigits:2})}</span>`;
+  document.getElementById('liveReturn').innerHTML = `<span class="${cls}">${sign}${ret.toFixed(1)}%</span>`;
+
+  const nTrades = (live.trades || []).length;
+  const nPos = Object.keys(live.positions || {}).length;
+  document.getElementById('liveCounts').textContent = `${nTrades} / ${nPos}`;
+
+  // Render positions
+  const positions = live.positions || {};
+  const posKeys = Object.keys(positions);
+  if (posKeys.length === 0) {
+    document.getElementById('livePositions').innerHTML = '<div style="font-size:12px; color:#848e9c; text-align:center; padding:8px;">No open positions</div>';
+    return;
+  }
+  let html = '<div style="font-size:11px; color:#848e9c; margin-bottom:6px;">Open Positions</div>';
+  posKeys.forEach(sym => {
+    const p = positions[sym];
+    const sideColor = p.side === 'long' ? '#0ecb81' : '#f6465d';
+    const sideBg = p.side === 'long' ? 'rgba(14,203,129,0.15)' : 'rgba(246,70,93,0.15)';
+    const qty = p.quantity ? p.quantity.toFixed(6) : '-';
+    const notional = p.quantity && p.entry_price ? (p.quantity * p.entry_price).toFixed(2) : '-';
+    html += `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-top:1px solid #1e2329;">
+      <div>
+        <span style="padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600; background:${sideBg}; color:${sideColor};">${p.side.toUpperCase()}</span>
+        <span style="font-size:13px; font-weight:500; margin-left:6px;">${sym}</span>
+      </div>
+      <div style="text-align:right; font-size:12px;">
+        <div>Entry: $${p.entry_price.toLocaleString('en',{minimumFractionDigits:2})}</div>
+        <div style="color:#848e9c;">Qty: ${qty} ($${notional})</div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('livePositions').innerHTML = html;
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    b.classList.toggle('active', ['assets','calendar','trades'][i] === tab);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+loadData();
+</script>
+</body>
+</html>

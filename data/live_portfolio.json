@@ -1,0 +1,14 @@
+{
+  "initial_capital": 5000.0,
+  "equity": 5000.0,
+  "start_date": "2026-04-08",
+  "end_date": "2026-04-08",
+  "last_updated": "2026-04-08T00:00:00",
+  "mode": "paper",
+  "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"],
+  "strategy": "FVG Trend Follow (score=2, fvg=0.10, sl=10.0, mh=360)",
+  "trades": [],
+  "positions": {},
+  "equity_curve": [],
+  "final_equity": 5000.0
+}

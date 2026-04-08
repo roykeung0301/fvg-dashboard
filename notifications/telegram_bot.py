@@ -40,13 +40,21 @@ class TelegramNotifier:
         self.daily_trades: list = []    # today's trades
         self.daily_pnl: float = 0.0
         self.equity: float = 0.0
-        self.initial_capital: float = 2000.0
+        self.initial_capital: float = 5000.0
+        self.last_prices: dict = {}     # symbol -> latest price
+
+        # Orchestrator reference (injected at startup for command routing)
+        self.orchestrator = None
 
         # Command handlers
         self._commands = {
             "/status": self._cmd_status,
             "/positions": self._cmd_positions,
             "/pnl": self._cmd_pnl,
+            "/pause": self._cmd_pause,
+            "/resume": self._cmd_resume,
+            "/unblock_longs": self._cmd_unblock_longs,
+            "/optimize": self._cmd_optimize,
             "/help": self._cmd_help,
         }
 
@@ -115,6 +123,7 @@ class TelegramNotifier:
             "quantity": quantity, "sl": sl,
             "entry_time": datetime.now(HKT),
         }
+        self.last_prices[symbol] = price
 
         await self.send(text)
 
@@ -130,6 +139,7 @@ class TelegramNotifier:
         self.daily_pnl += pnl
         self.equity += pnl
         self.positions.pop(symbol, None)
+        self.last_prices[symbol] = exit_price
 
         total_ret = (self.equity - self.initial_capital) / self.initial_capital * 100
 
@@ -169,11 +179,27 @@ class TelegramNotifier:
             text = f"📊 <b>Positions Report</b> ({len(self.positions)} open)\n━━━━━━━━━━━━━━━\n"
             for sym, pos in self.positions.items():
                 side_emoji = "🟢" if pos["side"] == "long" else "🔴"
-                held = datetime.now(HKT) - pos["entry_time"]
+                entry_t = pos["entry_time"]
+                if isinstance(entry_t, str):
+                    entry_t = datetime.fromisoformat(entry_t)
+                held = datetime.now(HKT) - entry_t
                 held_hours = held.total_seconds() / 3600
+                qty = pos.get('quantity', 0)
+                notional = qty * pos['entry_price'] if qty else 0
+                cur_price = self.last_prices.get(sym, pos['entry_price'])
+                if pos['side'] == 'long':
+                    upnl = (cur_price - pos['entry_price']) * qty
+                else:
+                    upnl = (pos['entry_price'] - cur_price) * qty
+                upnl_pct = (cur_price / pos['entry_price'] - 1) * 100 if pos['entry_price'] > 0 else 0
+                if pos['side'] == 'short':
+                    upnl_pct = -upnl_pct
+                upnl_emoji = "📈" if upnl >= 0 else "📉"
                 text += (
                     f"\n{side_emoji} <b>{sym}</b> {pos['side'].upper()}\n"
                     f"   Entry: ${pos['entry_price']:,.2f} | SL: ${pos['sl']:,.2f}\n"
+                    f"   Now: ${cur_price:,.2f} {upnl_emoji} {'+' if upnl >= 0 else ''}${upnl:,.2f} ({'+' if upnl_pct >= 0 else ''}{upnl_pct:.1f}%)\n"
+                    f"   Qty: {qty:.6f} (${notional:,.2f})\n"
                     f"   Held: {held_hours:.0f}h\n"
                 )
 
@@ -276,6 +302,66 @@ class TelegramNotifier:
         """Handle /pnl command."""
         await self.send_daily_summary()
 
+    async def _cmd_pause(self):
+        """Handle /pause — manually pause all trading."""
+        if self.orchestrator:
+            from models.messages import AgentMessage, MessageType
+            await self.orchestrator.message_bus.send(AgentMessage(
+                sender="telegram",
+                receiver="risk_manager",
+                msg_type=MessageType.COMMAND,
+                payload={"action": "pause_trading"},
+            ))
+            await self.send(
+                "⏸️ <b>交易已暫停</b>\n"
+                "━━━━━━━━━━━━━━━\n"
+                "所有新交易已停止\n"
+                "現有持倉不受影響\n"
+                "👉 /resume 恢復交易"
+            )
+        else:
+            await self.send("⚠️ Orchestrator not connected.")
+
+    async def _cmd_resume(self):
+        """Handle /resume — resume trading after extreme news pause."""
+        if self.orchestrator:
+            from models.messages import AgentMessage, MessageType
+            await self.orchestrator.message_bus.send(AgentMessage(
+                sender="telegram",
+                receiver="risk_manager",
+                msg_type=MessageType.COMMAND,
+                payload={"action": "resume_trading"},
+            ))
+        else:
+            await self.send("⚠️ Orchestrator not connected. Cannot send resume command.")
+
+    async def _cmd_unblock_longs(self):
+        """Handle /unblock_longs — allow longs again after major negative news."""
+        if self.orchestrator:
+            from models.messages import AgentMessage, MessageType
+            await self.orchestrator.message_bus.send(AgentMessage(
+                sender="telegram",
+                receiver="risk_manager",
+                msg_type=MessageType.COMMAND,
+                payload={"action": "unblock_longs"},
+            ))
+        else:
+            await self.send("⚠️ Orchestrator not connected. Cannot send command.")
+
+    async def _cmd_optimize(self):
+        """Handle /optimize — manually trigger parameter re-optimization."""
+        if self.orchestrator:
+            await self.send("🔧 Starting parameter re-optimization...")
+            from models.messages import AgentMessage, MessageType
+            await self.orchestrator.bus.publish(AgentMessage(
+                sender="telegram",
+                receiver="signal_engineer",
+                msg_type=MessageType.COMMAND,
+                payload={"action": "reoptimize"},
+            ))
+        else:
+            await self.send("⚠️ Orchestrator not connected.")
+
     async def _cmd_help(self):
         """Handle /help command."""
         text = (
@@ -284,6 +370,10 @@ class TelegramNotifier:
             "/status — System status & equity\n"
             "/positions — Current open positions\n"
             "/pnl — Today's P&L summary\n"
+            "/pause — Pause all trading\n"
+            "/resume — Resume trading\n"
+            "/optimize — Re-optimize parameters\n"
+            "/unblock_longs — Allow longs again\n"
             "/help — Show this message"
         )
         await self.send(text)

@@ -1,0 +1,21 @@
+# Secrets - NEVER commit
+.env
+*.key
+credentials*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data (large files)
+data/*.csv
+
+# Reports
+reports/*.png
+
+# OS
+.DS_Store
+Thumbs.db

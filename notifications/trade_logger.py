@@ -20,7 +20,7 @@ DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "live_portfolio.js
 class TradeLogger:
     """Write live trading state to JSON for dashboard consumption."""
 
-    def __init__(self, initial_capital: float = 2000.0):
+    def __init__(self, initial_capital: float = 5000.0):
         self.initial_capital = initial_capital
         self.equity = initial_capital
         self.positions: dict = {}       # symbol -> position info
@@ -47,7 +47,8 @@ class TradeLogger:
                 logger.error(f"Failed to load live data: {e}")
 
     def _save(self):
-        """Save current state to JSON."""
+        """Save current state to JSON (atomic write to prevent corruption)."""
+        import tempfile
         with self._lock:
             now = datetime.now(HKT)
             data = {
@@ -65,8 +66,19 @@ class TradeLogger:
                 "final_equity": round(self.equity, 2),
             }
             os.makedirs(DATA_PATH.parent, exist_ok=True)
-            with open(DATA_PATH, "w") as f:
-                json.dump(data, f, indent=2)
+            # Atomic write: write to temp file then rename
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode='w', dir=DATA_PATH.parent, delete=False, suffix='.tmp'
+                ) as tmp:
+                    json.dump(data, tmp, indent=2)
+                    tmp_path = tmp.name
+                os.replace(tmp_path, DATA_PATH)
+            except Exception as e:
+                logger.error(f"Failed to save: {e}")
+                # Fallback: direct write
+                with open(DATA_PATH, "w") as f:
+                    json.dump(data, f, indent=2)
 
     def log_entry(self, symbol: str, side: str, price: float,
                   quantity: float, sl: float):
@@ -100,8 +112,8 @@ class TradeLogger:
             "quantity": round(quantity, 6),
             "pnl": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
-            "commission": round(abs(pnl) * 0.001, 2),  # approximate
-            "net_pnl": round(pnl - abs(pnl) * 0.001, 2),
+            "commission": round((entry_price + exit_price) * quantity * 0.0004, 2),  # 0.04% per side
+            "net_pnl": round(pnl - (entry_price + exit_price) * quantity * 0.0004, 2),
             "exit_reason": exit_reason,
         }
         self.trades.append(trade)
