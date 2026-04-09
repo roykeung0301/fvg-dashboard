@@ -198,7 +198,12 @@ def build_html(data):
   calendarMonth = new Date(DATA.end_date);
   calendarMonth.setDate(1);
   initPeriods();
+  document.querySelector('.loading').style.display = 'none';
   render();
+  renderLive();
+  var m = DATA.live ? (DATA.live.mode === 'live' ? 'LIVE' : 'PAPER') : 'BACKTEST';
+  var u = DATA.live && DATA.live.last_updated ? ' | Updated: ' + DATA.live.last_updated.slice(0,16).replace('T',' ') : '';
+  document.getElementById('modeLabel').textContent = m + u;
 }}"""
 
     # Find and replace the loadData function
