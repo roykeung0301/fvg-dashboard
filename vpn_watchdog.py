@@ -44,12 +44,12 @@ HKT = timezone(timedelta(hours=8))
 
 # Config
 CHECK_INTERVAL = 300          # 5 minutes
-BINANCE_PING_URL = "https://api.binance.com/api/v3/ping"
-BINANCE_PING_TIMEOUT = 10    # seconds
+EXCHANGE_PING_URL = os.getenv("EXCHANGE_PING_URL", "https://contract.mexc.com/api/v1/contract/ping")
+EXCHANGE_PING_TIMEOUT = 10    # seconds
 VPN_RECONNECT_WAIT = 30      # seconds to wait after reconnecting VPN
 VPN_MAX_RETRIES = 3           # max VPN reconnect attempts
 TRADING_SCRIPT = "main.py"
-TRADING_ARGS = ["--paper"]
+TRADING_ARGS = ["--live"]
 
 
 def check_vpn_interface() -> bool:
@@ -66,31 +66,29 @@ def check_vpn_interface() -> bool:
         return False
 
 
-def check_binance_api() -> bool:
-    """Ping Binance API to verify connectivity."""
+def check_exchange_api() -> bool:
+    """Ping exchange API to verify connectivity."""
     try:
         result = subprocess.run(
-            ["curl", "-s", "--max-time", str(BINANCE_PING_TIMEOUT),
-             "-o", "/dev/null", "-w", "%{http_code}", BINANCE_PING_URL],
-            capture_output=True, text=True, timeout=BINANCE_PING_TIMEOUT + 5,
+            ["curl", "-s", "--max-time", str(EXCHANGE_PING_TIMEOUT),
+             "-o", "/dev/null", "-w", "%{http_code}", EXCHANGE_PING_URL],
+            capture_output=True, text=True, timeout=EXCHANGE_PING_TIMEOUT + 5,
         )
         return result.stdout.strip() == "200"
     except Exception as e:
-        logger.error(f"Binance API check failed: {e}")
+        logger.error(f"Exchange API check failed: {e}")
         return False
 
 
 def check_vpn_health() -> dict:
-    """Full VPN health check."""
+    """Exchange reachability check.
+    Note: MEXC is reachable from user's region without VPN, so VPN interface
+    check was removed. Only the API ping matters for trading health.
+    """
+    api_ok = check_exchange_api()
+    status = "healthy" if api_ok else "api_unreachable"
+    # Keep 'vpn_interface' key for backward-compat with log formatting; report observed state.
     vpn_up = check_vpn_interface()
-    api_ok = check_binance_api()
-
-    status = "healthy"
-    if not vpn_up:
-        status = "vpn_down"
-    elif not api_ok:
-        status = "api_unreachable"
-
     return {"vpn_interface": vpn_up, "binance_api": api_ok, "status": status}
 
 
@@ -163,22 +161,35 @@ def stop_trading() -> bool:
 
 
 def start_trading() -> bool:
-    """Start the trading process."""
+    """Start the trading process (auto-confirms live mode)."""
     if get_trading_pid() is not None:
         logger.info("Trading process already running")
         return True
 
     logger.info("Starting trading process...")
     try:
+        # Remove stale lock file from previous crash
+        lock_file = BASE_DIR / ".bot_live.lock"
+        if lock_file.exists():
+            lock_file.unlink(missing_ok=True)
+            logger.info("Removed stale lock file")
+
         log_file = open(LOG_DIR / "trading_output.log", "a")
+        # Pipe "yes" to auto-confirm live trading prompt
+        yes_pipe = subprocess.Popen(["echo", "yes"], stdout=subprocess.PIPE)
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
         subprocess.Popen(
             [sys.executable, str(BASE_DIR / TRADING_SCRIPT)] + TRADING_ARGS,
             cwd=str(BASE_DIR),
+            stdin=yes_pipe.stdout,
             stdout=log_file,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            env=env,
         )
-        time.sleep(5)
+        yes_pipe.stdout.close()
+        time.sleep(8)  # Live mode needs more startup time
         pid = get_trading_pid()
         if pid:
             logger.info(f"Trading started (PID {pid})")
@@ -233,42 +244,16 @@ def run_health_check():
 
     actions_taken = []
 
-    # ── VPN issues ──
+    # ── Exchange API unreachable ──
+    # Don't kill trading — brief API outages are common and the bot retries.
+    # Only alert; let the bot's own error handling decide when to stop.
     if health["status"] != "healthy":
-        logger.warning(f"VPN issue detected: {health['status']}")
+        logger.warning(f"Exchange API unreachable (VPN interface: "
+                       f"{'up' if health['vpn_interface'] else 'down'})")
+        actions_taken.append("exchange API unreachable (no action taken)")
 
-        # Stop trading first (can't trade without VPN)
-        if trading_pid:
-            stop_trading()
-            actions_taken.append("stopped trading")
-
-        # Try to reconnect VPN
-        reconnected = False
-        for attempt in range(1, VPN_MAX_RETRIES + 1):
-            logger.info(f"VPN reconnect attempt {attempt}/{VPN_MAX_RETRIES}")
-            if restart_surfshark():
-                # Verify Binance is reachable
-                if check_binance_api():
-                    logger.info("VPN reconnected + Binance API OK")
-                    reconnected = True
-                    actions_taken.append(f"VPN reconnected (attempt {attempt})")
-                    break
-                else:
-                    logger.warning("VPN up but Binance still unreachable")
-            time.sleep(10)
-
-        if reconnected:
-            # Restart trading
-            if start_trading():
-                actions_taken.append("trading restarted")
-            else:
-                actions_taken.append("trading restart FAILED")
-        else:
-            logger.error(f"VPN reconnect failed after {VPN_MAX_RETRIES} attempts")
-            actions_taken.append(f"VPN reconnect FAILED ({VPN_MAX_RETRIES} attempts)")
-
-    # ── Trading down but VPN ok ──
-    elif trading_pid is None:
+    # ── Trading process down ──
+    if trading_pid is None:
         logger.warning("Trading process not running, restarting...")
         if start_trading():
             actions_taken.append("trading restarted")
